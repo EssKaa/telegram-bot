@@ -1,26 +1,32 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
+from telethon import TelegramClient, events
 import requests
 import os
+import asyncio
 
-TOKEN = os.getenv("BOT_TOKEN")
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
 N8N_WEBHOOK = os.getenv("N8N_WEBHOOK")
 
+client = TelegramClient("session", API_ID, API_HASH)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message
+
+@client.on(events.NewMessage)
+async def handle_message(event):
+    message = event.message
 
     if not message:
         return
 
-    text = message.text
+    text = message.message
+    if not text:
+        return
 
-    user = message.from_user
-    username = user.username or user.first_name
+    sender = await event.get_sender()
+    username = getattr(sender, "username", None) or getattr(sender, "first_name", "unknown")
 
-    chat_id = message.chat_id
+    chat_id = event.chat_id
 
-    # 👉 an n8n senden
+    # 👉 an n8n senden (gleiches Format!)
     try:
         requests.post(N8N_WEBHOOK, json={
             "text": text,
@@ -28,13 +34,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "chat_id": chat_id
         })
     except Exception as e:
-        print("Fehler beim Senden an n8n:", e)
+        print("error sending to n8n:", e)
+
+async def main():
+    while True:
+        try:
+            print("Starting client...")
+            await client.start()
+            print("connected")
+            await client.run_until_disconnected()
+        except Exception as e:
+            print("connection lost:", e)
+            await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("Bot läuft...")
-    app.run_polling()
+    with client:
+        client.loop.run_until_complete(main())
